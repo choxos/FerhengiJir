@@ -10,7 +10,7 @@ export const firebaseConfig = {
 };
 
 // Firebase App ID for collections
-export const appId = process.env.REACT_APP_FIREBASE_APP_ID || 'zhir-dictionary';
+export const appId = process.env.REACT_APP_FIREBASE_APP_ID || 'ferhengi-jir';
 
 // Google Gemini API Configuration
 export const geminiApiKey = process.env.REACT_APP_GEMINI_API_KEY; 

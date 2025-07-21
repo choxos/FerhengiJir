@@ -13,7 +13,7 @@ const db = getFirestore(app);
 // --- i18n (Internationalization) for UI Text ---
 const uiText = {
     ku: {
-        title: "فەرهەنگی ژیر",
+        title: "Ferhengî Jîr",
         searchPlaceholder: "بۆ وشەیەک بگەڕێ...",
         searchButton: "گەڕان",
         searchingText: "گەڕان...",
@@ -37,8 +37,8 @@ const uiText = {
         otherLanguages: "وەرگێڕان بە زمانەکانی تر",
         error: "هەڵەیەک ڕوویدا، تکایە دووبارە هەوڵبدەرەوە.",
         developedBy: "پەرەپێدراوە لەلایەن سەرچیا",
-        infoTitle: "دەربارەی فەرهەنگی ژیر",
-        infoP1: "فەرهەنگی ژیر ئامرازێکی زیرەک و پێشکەوتووە بۆ فێرخوازانی زمان. بە بەکارهێنانی هێزی AI، وەرگێڕان و شیکردنەوەی ورد بۆ وشەکان دابین دەکات.",
+        infoTitle: "دەربارەی Ferhengî Jîr",
+        infoP1: "Ferhengî Jîr ئامرازێکی زیرەک و پێشکەوتووە بۆ فێرخوازانی زمان. بە بەکارهێنانی هێزی AI، وەرگێڕان و شیکردنەوەی ورد بۆ وشەکان دابین دەکات.",
         infoP2: "تایبەتمەندییەکان:",
         infoL1: "وەرگێڕانی ورد و ڕوونکردنەوەی فرەواتایی.",
         infoL2: "نموونەی ڕستەیی بۆ تێگەیشتنی باشتر.",
@@ -60,7 +60,7 @@ const uiText = {
         langEnglish: "English",
     },
     en: {
-        title: "Zhir Dictionary",
+        title: "Ferhengî Jîr",
         searchPlaceholder: "Search for a word...",
         searchButton: "Search",
         searchingText: "Searching...",
@@ -84,8 +84,8 @@ const uiText = {
         otherLanguages: "Translations in Other Languages",
         error: "Failed to get translation. Please try again.",
         developedBy: "Developed by Sarchia",
-        infoTitle: "About Zhir Dictionary",
-        infoP1: "Zhir Dictionary is a smart and advanced tool for language learners. Using the power of AI, it provides accurate translations and detailed analysis for words.",
+        infoTitle: "About Ferhengî Jîr",
+        infoP1: "Ferhengî Jîr is a smart and advanced tool for language learners. Using the power of AI, it provides accurate translations and detailed analysis for words.",
         infoP2: "Features include:",
         infoL1: "Accurate translations and multiple meanings.",
         infoL2: "Example sentences for better context.",
@@ -350,7 +350,7 @@ function DictionaryApp({ userId, t, settings, theme }) {
             <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700">
                 <div className="flex flex-col sm:flex-row items-center gap-4">
                     <div className="relative w-full">
-                        <Search className="absolute top-1/2 -translate-y-1/2 text-slate-400" style={t.title === 'Zhir Dictionary' ? {left: '1rem'} : {right: '1rem'}}/>
+                        <Search className="absolute top-1/2 -translate-y-1/2 text-slate-400" style={t.title === 'Ferhengî Jîr' ? {left: '1rem'} : {right: '1rem'}}/>
                         <input type="text" value={word} onChange={(e) => setWord(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleSearch()} placeholder={t.searchPlaceholder}
                             className={`w-full bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 placeholder-slate-400 px-12 py-4 rounded-lg focus:outline-none focus:ring-2 ${theme.ring} transition duration-300`} />
                     </div>

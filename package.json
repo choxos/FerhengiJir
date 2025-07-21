@@ -1,7 +1,7 @@
 {
-  "name": "zhir-dictionary",
+  "name": "ferhengi-jir",
   "version": "1.0.0",
-  "description": "Kurdish-English Dictionary powered by Google Gemini AI",
+  "description": "Ferhengî Jîr - Kurdish-English Dictionary powered by Google Gemini AI",
   "private": true,
   "dependencies": {
     "react": "^18.2.0",

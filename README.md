@@ -1,4 +1,4 @@
-# Zhir Dictionary - فەرهەنگی ژیر
+# Ferhengî Jîr - فەرهەنگی ژیر
 
 A smart Kurdish-English dictionary powered by Google Gemini AI. This application provides comprehensive translations, detailed word analysis, and multilingual support for Kurdish language learners.
 
@@ -272,4 +272,4 @@ For support or questions:
 
 ---
 
-**فەرهەنگی ژیر** - Empowering Kurdish language learning through AI technology.
+**Ferhengî Jîr** - Empowering Kurdish language learning through AI technology.
