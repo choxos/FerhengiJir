@@ -149,6 +149,7 @@ const ANALYSIS_SCHEMA = {
       type: 'OBJECT',
       properties: {
         kurmanji_latin: { type: 'STRING' },
+        sorani: { type: 'STRING' },
         arabic: { type: 'STRING' },
         persian: { type: 'STRING' },
         turkish: { type: 'STRING' },
@@ -220,14 +221,16 @@ async function callGemini(payload, apiKey, attempt = 0) {
 async function handleAnalyze(body, apiKey) {
   const term = String(body.term || '').trim();
   const direction = body.direction === 'ku-to-en' ? 'ku-to-en' : 'en-to-ku';
+  // Which Kurdish variant the analysis is written in.
+  const variant = body.variant === 'kurmanji' ? 'kurmanji' : 'sorani';
   if (!term) throw httpError('Missing term', 400);
   if (term.length > MAX_TERM_LENGTH) throw httpError('Term too long', 400);
 
-  // Shared cache: identical (direction, term) lookups are served from Firestore
-  // instead of paying for another Gemini call. Dictionary entries are stable.
+  // Shared cache: identical (variant, direction, term) lookups are served from
+  // Firestore instead of paying for another Gemini call. Entries are stable.
   const cacheKey = crypto
     .createHash('sha1')
-    .update(`${CACHE_VERSION}|${direction}|${term.toLowerCase()}`)
+    .update(`${CACHE_VERSION}|${variant}|${direction}|${term.toLowerCase()}`)
     .digest('hex');
   const cacheRef = firestore.collection(CACHE_COLLECTION).doc(cacheKey);
 
@@ -241,13 +244,26 @@ async function handleAnalyze(body, apiKey) {
     logger.warn('Cache read failed', err.message);
   }
 
+  const kurdishName =
+    variant === 'kurmanji' ? 'Kurdish (Kurmanji, written in Latin script)' : 'Kurdish (Sorani)';
+  // The fields kurdish_word / kurdish_explanation must be written in this variant.
   const [sourceLang, targetLang] =
-    direction === 'en-to-ku' ? ['English', 'Kurdish (Sorani)'] : ['Kurdish (Sorani)', 'English'];
+    direction === 'en-to-ku' ? ['English', kurdishName] : [kurdishName, 'English'];
+
+  // In other_languages, include the OTHER Kurdish variant plus the fixed set.
+  const otherKurdish =
+    variant === 'kurmanji'
+      ? 'the `sorani` field (Kurdish Sorani in Arabic script)'
+      : 'the `kurmanji_latin` field (Kurdish Kurmanji in Latin script)';
 
   const prompt =
     `Analyze the ${sourceLang} word "${term}". Provide a comprehensive translation and ` +
     `analysis in ${targetLang} optimized for a Kurdish speaker learning English. ` +
-    `Provide synonyms and antonyms in ${sourceLang}. The response must be a JSON object.`;
+    `All Kurdish output (kurdish_word, kurdish_explanation, the translation, informal ` +
+    `terms) must be written in ${kurdishName}. ` +
+    `Provide synonyms and antonyms in ${sourceLang}. ` +
+    `In other_languages, fill ${otherKurdish}, plus arabic, persian, turkish, french, ` +
+    `and german. The response must be a JSON object.`;
 
   const payload = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -264,7 +280,7 @@ async function handleAnalyze(body, apiKey) {
   }
 
   cacheRef
-    .set({ payload: parsed, direction, term, createdAt: admin.firestore.FieldValue.serverTimestamp() })
+    .set({ payload: parsed, variant, direction, term, createdAt: admin.firestore.FieldValue.serverTimestamp() })
     .catch((err) => logger.warn('Cache write failed', err.message));
 
   return parsed;
