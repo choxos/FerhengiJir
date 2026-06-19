@@ -3,7 +3,8 @@
 // No API key here. Every call attaches the current user's Firebase ID token so
 // the Cloud Function can authorize the request. The function builds the prompt
 // and holds the secret key.
-import { auth } from '../config/firebase';
+import { getToken } from 'firebase/app-check';
+import { auth, appCheck } from '../config/firebase';
 
 // Same-origin by default (Hosting rewrites /api/** to the function). For local
 // development against the emulator, set REACT_APP_API_BASE.
@@ -15,12 +16,24 @@ async function authedPost(path, body, signal) {
     throw new Error('Not authenticated');
   }
   const token = await user.getIdToken();
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token}`,
+  };
+
+  // Attach an App Check token when App Check is configured.
+  if (appCheck) {
+    try {
+      const result = await getToken(appCheck, false);
+      headers['X-Firebase-AppCheck'] = result.token;
+    } catch (_) {
+      /* proceed without it; server only enforces when configured to */
+    }
+  }
+
   const response = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
+    headers,
     body: JSON.stringify(body),
     signal,
   });

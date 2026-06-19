@@ -66,10 +66,27 @@ firebase emulators:start          # functions + firestore + hosting on one origi
 # to the functions emulator URL in .env (see env.example).
 ```
 
-## Recommended next step: App Check
+## App Check (wired, off by default)
 
-Auth + rate limiting stop casual abuse. For real protection against scripted
-abuse of the proxy, enable [Firebase App Check](https://firebase.google.com/docs/app-check)
-(reCAPTCHA v3 / Enterprise) and call `verifyToken` on the App Check header inside
-the function. This ties requests to your actual web app, not just any signed-in
-client.
+App Check is already implemented on both sides; it is inert until you configure
+it, so nothing breaks before then. To turn it on:
+
+1. In the Firebase console, register the web app with **App Check** using
+   reCAPTCHA v3 and copy the site key.
+2. Set `REACT_APP_RECAPTCHA_SITE_KEY` in `.env` and rebuild. The client now
+   attaches an App Check token to every `/api` request.
+3. Once tokens are flowing, enforce on the server by setting the function param
+   `APP_CHECK_ENFORCE=true` (e.g. a `functions/.env` line `APP_CHECK_ENFORCE=true`,
+   then redeploy). The function then rejects requests without a valid token.
+
+The CSP in `firebase.json` already allows the reCAPTCHA and Analytics origins, so
+no header change is needed when you enable these.
+
+## Other proxy hardening (already in place)
+
+- **Shared cache:** identical `(word, direction)` analyses are cached in the
+  `aiCache` Firestore collection, so repeat lookups skip Gemini entirely. The
+  collection is reachable only by the function (admin SDK); client rules deny it.
+- **Resilience:** the proxy retries transient upstream 5xx/network errors once,
+  returns 429 on upstream rate limits, and reports safety-filter blocks (422)
+  and malformed output (502) distinctly instead of a generic failure.
