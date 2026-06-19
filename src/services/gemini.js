@@ -53,9 +53,11 @@ async function authedPost(path, body, signal) {
   return response.json();
 }
 
-// Analyze a single word; `direction` is 'en-to-ku' or 'ku-to-en'.
-export function analyzeWord(term, direction, signal) {
-  return authedPost('/api/analyze', { term, direction }, signal);
+// Analyze a single word.
+//   direction: 'en-to-ku' | 'ku-to-en'
+//   variant:   'sorani' | 'kurmanji' (the Kurdish variant the analysis is written in)
+export function analyzeWord(term, direction, variant, signal) {
+  return authedPost('/api/analyze', { term, direction, variant }, signal);
 }
 
 // Translate an array of Kurdish explanations to English. Returns string[].

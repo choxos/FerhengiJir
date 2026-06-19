@@ -9,6 +9,10 @@ import {
 } from 'lucide-react';
 import { auth, db, appId, track } from './config/firebase';
 import { analyzeWord, translateTexts } from './services/gemini';
+import dailyWords from './data/dailyWords';
+import randomEnWords from './data/randomEnWords';
+import randomKuWords from './data/randomKuWords';
+import advancedWords from './data/advancedWords';
 
 // Bilingual brand mark (Sorani + Latin).
 const BRAND = 'فەرهەنگی ژیر | Ferhengî Jîr';
@@ -424,6 +428,10 @@ function DictionaryApp({ userId, t, settings, theme, uiLang }) {
     const cacheRef = useRef(new Map());
     const abortRef = useRef(null);
 
+    // The Kurdish variant the analysis is written in follows the UI language:
+    // Kurmancî UI -> Kurmanji analysis; Sorani/English UI -> Sorani analysis.
+    const variant = uiLang === 'kmr' ? 'kurmanji' : 'sorani';
+
     // Local autocomplete suggestions: recent searches first, then favorited words.
     const suggestions = useMemo(() => {
         const seen = new Set();
@@ -450,7 +458,7 @@ function DictionaryApp({ userId, t, settings, theme, uiLang }) {
 
         const isKurdish = /[؀-ۿ]/.test(term);
         const direction = searchLang || (isKurdish ? 'ku-to-en' : 'en-to-ku');
-        const cacheKey = `${direction}:${term.toLowerCase()}`;
+        const cacheKey = `${variant}:${direction}:${term.toLowerCase()}`;
 
         // Cancel any in-flight request so a slow earlier search can't overwrite
         // a newer one (fixes a result race condition).
@@ -467,12 +475,12 @@ function DictionaryApp({ userId, t, settings, theme, uiLang }) {
             if (cacheRef.current.has(cacheKey)) {
                 data = cacheRef.current.get(cacheKey);
             } else {
-                data = await analyzeWord(term, direction, controller.signal);
+                data = await analyzeWord(term, direction, variant, controller.signal);
                 cacheRef.current.set(cacheKey, data);
             }
             if (controller.signal.aborted) return;
 
-            const resultData = { word: term, ...data, lang: direction };
+            const resultData = { word: term, ...data, lang: direction, variant };
             setSearchResult(resultData);
             setRecent((prev) => [term, ...prev.filter((w) => (w || '').toLowerCase() !== term.toLowerCase())].slice(0, 10));
             track('search', { direction, term });
@@ -491,7 +499,7 @@ function DictionaryApp({ userId, t, settings, theme, uiLang }) {
                 abortRef.current = null;
             }
         }
-    }, [word, historyCollectionRef, t.error, t.rateLimited, setRecent]);
+    }, [word, variant, historyCollectionRef, t.error, t.rateLimited, setRecent]);
 
     useEffect(() => {
         if (searchTrigger.word) {
@@ -570,7 +578,7 @@ function DictionaryApp({ userId, t, settings, theme, uiLang }) {
             </div>
 
             {isLoading && <div className="mt-8"><LoadingIndicator t={t} theme={theme} /></div>}
-            {!searchResult && !isLoading && <HomePageFeatures t={t} onWordClick={setSearchTrigger} />}
+            {!searchResult && !isLoading && <HomePageFeatures t={t} onWordClick={setSearchTrigger} uiLang={uiLang} />}
             {error && <div role="alert" className="mt-6 text-center text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/20 p-4 rounded-lg">{error}</div>}
             {searchResult && <SearchResultDisplay result={searchResult} t={t} speak={speak} handleFavorite={handleFavorite} isFavorited={isFavorited(searchResult.word)} onWordClick={setSearchTrigger} settings={settings} theme={theme} />}
         </div>
@@ -578,37 +586,34 @@ function DictionaryApp({ userId, t, settings, theme, uiLang }) {
 }
 
 // --- Home Page Features ---
-const wordLists = {
-    daily: [{ en: 'Resilience', ku: 'خۆڕاگری' }, { en: 'Compassion', ku: 'بەزەیی' }, { en: 'Integrity', ku: 'دەستپاکی' }],
-    random_en: [ { en: 'Ephemeral', ku: 'کاتی' }, { en: 'Luminous', ku: 'درەوشاوە' }, { en: 'Serendipity', ku: 'ڕێکەوتی خۆش' }, { en: 'Petrichor', ku: 'بۆنی دوای باران' }, { en: 'Mellifluous', ku: 'شیرین' } ],
-    random_ku: [ { en: 'Freedom', ku: 'ئازادی' }, { en: 'Homeland', ku: 'نیشتیمان' }, { en: 'Peace', ku: 'ئاشتی' }, { en: 'Love', ku: 'خۆشەویستی' }, { en: 'Future', ku: 'داهاتوو' } ],
-    advanced: [ { en: 'Ubiquitous', ku: 'هەمەگیر' }, { en: 'Pulchritudinous', ku: 'جوان' }, { en: 'Obfuscate', ku: 'تەڵخ کردن' }, { en: 'Proclivity', ku: 'مەیل' }, { en: 'Vicissitude', ku: 'هەوراز و نشێو' } ]
-};
-
-const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-
-function HomePageFeatures({ t, onWordClick }) {
+function HomePageFeatures({ t, onWordClick, uiLang }) {
+    const isKmr = uiLang === 'kmr';
     const featureCards = useMemo(() => {
+        // Date-seeded so every tile is stable within a day and rotates daily,
+        // drawing from 366-word lists (one per day of the year).
         const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
+        const ofDay = (arr) => arr[dayOfYear % arr.length];
         return [
-            { type: 'daily', word: wordLists.daily[dayOfYear % wordLists.daily.length], title: t.wordOfTheDay, icon: <Sparkles />, color: 'from-indigo-500 to-violet-600', lang: 'en-to-ku' },
-            { type: 'random_en', word: pick(wordLists.random_en), title: t.randomEnglish, icon: <Shuffle />, color: 'from-emerald-500 to-green-600', lang: 'en-to-ku' },
-            { type: 'random_ku', word: pick(wordLists.random_ku), title: t.randomKurdish, icon: <Shuffle />, color: 'from-amber-500 to-orange-600', lang: 'ku-to-en' },
-            { type: 'advanced', word: pick(wordLists.advanced), title: t.advancedWord, icon: <BrainCircuit />, color: 'from-rose-500 to-red-600', lang: 'en-to-ku' },
+            { type: 'daily', word: ofDay(dailyWords), title: t.wordOfTheDay, icon: <Sparkles />, color: 'from-indigo-500 to-violet-600', lang: 'en-to-ku' },
+            { type: 'random_en', word: ofDay(randomEnWords), title: t.randomEnglish, icon: <Shuffle />, color: 'from-emerald-500 to-green-600', lang: 'en-to-ku' },
+            { type: 'random_ku', word: ofDay(randomKuWords), title: t.randomKurdish, icon: <Shuffle />, color: 'from-amber-500 to-orange-600', lang: 'ku-to-en' },
+            { type: 'advanced', word: ofDay(advancedWords), title: t.advancedWord, icon: <BrainCircuit />, color: 'from-rose-500 to-red-600', lang: 'en-to-ku' },
         ];
     }, [t]);
+
+    const kurdishOf = (w) => (isKmr ? w.kmr : w.ku);
 
     return (
         <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in">
             {featureCards.map((card) => (
                 <button key={card.type} type="button"
-                    onClick={() => onWordClick({ word: card.lang === 'en-to-ku' ? card.word.en : card.word.ku, lang: card.lang })}
+                    onClick={() => onWordClick({ word: card.lang === 'en-to-ku' ? card.word.en : kurdishOf(card.word), lang: card.lang })}
                     className={`text-start p-6 rounded-2xl shadow-lg text-white cursor-pointer group transition-transform transform hover:scale-[1.03] focus:outline-none focus:ring-2 focus:ring-white/70 bg-gradient-to-tr ${card.color}`}>
                     <div className="flex justify-between items-start">
                         <div>
                             <h2 className="text-md font-bold mb-2 opacity-80 flex items-center gap-2">{card.icon} {card.title}</h2>
                             <p className="text-3xl font-bold">{card.word.en}</p>
-                            <p className="text-2xl font-bold mt-1" dir="rtl">{card.word.ku}</p>
+                            <p className="text-2xl font-bold mt-1" dir={isKmr ? 'ltr' : 'rtl'}>{kurdishOf(card.word)}</p>
                         </div>
                         <BookHeart className="h-8 w-8 text-white/30 group-hover:text-white/60 transition-colors" />
                     </div>
@@ -620,10 +625,15 @@ function HomePageFeatures({ t, onWordClick }) {
 
 // --- Search Result Display Component ---
 function SearchResultDisplay({ result, t, speak, handleFavorite, isFavorited, onWordClick, settings, theme }) {
-    const { word, translation, meanings, synonyms, antonyms, lang, informal_meanings, other_languages } = result;
+    const { word, translation, meanings, synonyms, antonyms, lang, informal_meanings, other_languages, variant } = result;
     const [isTranslating, setIsTranslating] = useState(false);
     const [translatedExplanations, setTranslatedExplanations] = useState({});
     const [showEnglishExplanations, setShowEnglishExplanations] = useState(false);
+
+    // Kurmanji is Latin (LTR); Sorani is Arabic-script (RTL).
+    const kuDir = variant === 'kurmanji' ? 'ltr' : 'rtl';
+    // Synonyms/antonyms are in the source language.
+    const sourceDir = lang === 'en-to-ku' ? 'ltr' : kuDir;
 
     const highlightWord = (sentence, wordToHighlight) => {
         if (!sentence || !wordToHighlight) return sentence;
@@ -665,7 +675,7 @@ function SearchResultDisplay({ result, t, speak, handleFavorite, isFavorited, on
         return (
             <div className="mt-8">
                 <h3 className={`text-lg font-semibold ${theme.text} mb-3`}>{title}</h3>
-                <div className="flex flex-wrap gap-2" dir={lang === 'ku-to-en' ? 'ltr' : 'rtl'}>
+                <div className="flex flex-wrap gap-2" dir={sourceDir}>
                     {items.map((item, index) => (
                         <button key={index} onClick={() => onWordClick({ word: item, lang })}
                             className={`bg-slate-200 dark:bg-slate-700 px-3 py-1 rounded-full text-sm hover:bg-opacity-80 dark:hover:bg-opacity-80 transition-colors ${theme.darkHoverBg}`}>
@@ -677,8 +687,11 @@ function SearchResultDisplay({ result, t, speak, handleFavorite, isFavorited, on
         );
     };
 
+    // When the analysis is in Kurmanji, surface Sorani here (and vice versa).
     const languageOrder = [
-        { key: 'kurmanji_latin', name: 'Kurmancî' },
+        variant === 'kurmanji'
+            ? { key: 'sorani', name: 'سۆرانی' }
+            : { key: 'kurmanji_latin', name: 'Kurmancî' },
         { key: 'arabic', name: 'العربية' },
         { key: 'persian', name: 'فارسی' },
         { key: 'turkish', name: 'Türkçe' },
@@ -696,7 +709,7 @@ function SearchResultDisplay({ result, t, speak, handleFavorite, isFavorited, on
                             <button onClick={() => speak(word)} aria-label={t.ariaSpeak} className={`text-slate-400 hover:${theme.text} transition`}> <Volume2 /> </button>
                         )}
                     </div>
-                    <p className={`text-3xl font-bold ${theme.text} mt-1`} dir={lang === 'en-to-ku' ? 'rtl' : 'ltr'}>{translation}</p>
+                    <p className={`text-3xl font-bold ${theme.text} mt-1`} dir={lang === 'en-to-ku' ? kuDir : 'ltr'}>{translation}</p>
                 </div>
                 <div className="flex items-center gap-2">
                     <button onClick={handleTranslateToggle} disabled={isTranslating} aria-label={t.ariaTranslate} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50">
@@ -713,11 +726,11 @@ function SearchResultDisplay({ result, t, speak, handleFavorite, isFavorited, on
                 <div className="space-y-6">
                     {meanings.map((meaning, index) => (
                         <div key={index} className="p-4 bg-slate-100 dark:bg-slate-700/50 rounded-lg">
-                            <div className="flex items-baseline gap-4" dir="rtl">
+                            <div className="flex items-baseline gap-4" dir={kuDir}>
                                <p className={`text-xl font-semibold ${theme.highlight}`}>{meaning.kurdish_word}</p>
                                <p className="font-semibold text-slate-500 dark:text-slate-400 text-sm">({meaning.partOfSpeech})</p>
                             </div>
-                            <p className="mt-2 text-lg text-slate-800 dark:text-slate-200" dir="rtl">{meaning.kurdish_explanation}</p>
+                            <p className="mt-2 text-lg text-slate-800 dark:text-slate-200" dir={kuDir}>{meaning.kurdish_explanation}</p>
                             {showEnglishExplanations && (
                                 <div className="mt-2 p-3 text-left bg-slate-200 dark:bg-slate-800 rounded-md" dir="ltr">
                                     <p className="text-slate-700 dark:text-slate-300">{translatedExplanations[index] || 'Translating...'}</p>
@@ -727,7 +740,7 @@ function SearchResultDisplay({ result, t, speak, handleFavorite, isFavorited, on
                                 <div className="mt-4 border-t border-slate-200 dark:border-slate-600 pt-4">
                                     <div className="text-sm" dir="ltr">
                                         <p className="text-slate-600 dark:text-slate-300">{highlightWord(meaning.example.sourceSentence, lang === 'en-to-ku' ? word : translation)}</p>
-                                        <p className={`mt-1 ${theme.highlight}`} dir="rtl">{highlightWord(meaning.example.translatedSentence, lang === 'en-to-ku' ? translation : word)}</p>
+                                        <p className={`mt-1 ${theme.highlight}`} dir={lang === 'en-to-ku' ? kuDir : 'ltr'}>{highlightWord(meaning.example.translatedSentence, lang === 'en-to-ku' ? translation : word)}</p>
                                     </div>
                                 </div>
                             )}
@@ -739,7 +752,7 @@ function SearchResultDisplay({ result, t, speak, handleFavorite, isFavorited, on
             {settings.showInformal && informal_meanings && informal_meanings.length > 0 &&
                 <div className="mt-8">
                     <h3 className={`text-lg font-semibold ${theme.text} mb-3`}>{t.informalMeanings}</h3>
-                    <div className="flex flex-wrap gap-2" dir="rtl">
+                    <div className="flex flex-wrap gap-2" dir={kuDir}>
                         {informal_meanings.map((ctx, i) => (
                              <button key={i} onClick={() => onWordClick({ word: ctx.term, lang: 'ku-to-en' })}
                                 className={`bg-slate-200 dark:bg-slate-700 px-3 py-1 rounded-full text-sm hover:bg-opacity-80 dark:hover:bg-opacity-80 transition-colors ${theme.darkHoverBg}`}>
