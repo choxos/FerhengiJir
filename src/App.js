@@ -136,6 +136,67 @@ const uiText = {
         ariaTranslate: "Translate to English",
         ariaDelete: "Delete",
         ariaClose: "Close",
+    },
+    kmr: {
+        title: BRAND,
+        searchPlaceholder: "Li peyvekê bigere...",
+        searchButton: "Lêgerîn",
+        searchingText: "Tê gerîn...",
+        clearInput: "Paqij bike",
+        navHome: "Destpêk",
+        navFavorites: "Bijarte",
+        navHistory: "Dîrok",
+        wordOfTheDay: "Peyva Rojê",
+        randomEnglish: "Peyva Îngilîzî ya Tesadufî",
+        randomKurdish: "Peyva Kurdî ya Tesadufî",
+        advancedWord: "Peyva Pêşketî",
+        favoritesTitle: "Peyvên Bijarte",
+        historyTitle: "Dîroka Lêgerînê",
+        noFavorites: "Hêj peyvên te yên bijarte tune ne.",
+        noHistory: "Dîroka te ya lêgerînê vala ye.",
+        clearHistory: "Dîrokê Paqij Bike",
+        partOfSpeech: "Cureyê peyvê",
+        meanings: "Wate",
+        synonyms: "Hevwate",
+        antonyms: "Dijwate",
+        informalMeanings: "Bikaranîna ne-fermî û herêmî",
+        otherLanguages: "Werger bi zimanên din",
+        error: "Werger nehat standin. Ji kerema xwe dîsa biceribîne.",
+        rateLimited: "Daxwaz pir zêde ne. Ji kerema xwe çend saniyan bisekine.",
+        developedBy: "Ji aliyê Sarchia û Choxos ve hatiye pêşxistin",
+        infoTitle: "Derbarê Ferhengî Jîr",
+        infoP1: "Ferhengî Jîr amûreke jîr û pêşketî ye ji bo fêrbûyên ziman. Bi hêza AIyê, ji bo peyvan wergerên rast û şîroveyeke berfireh peyda dike.",
+        infoP2: "Taybetmendî:",
+        infoL1: "Wergerên rast û gelek wate.",
+        infoL2: "Hevokên nimûne ji bo têgihiştineke baştir.",
+        infoL3: "Wergera ravekirinan bo Îngilîzî li ser daxwazê.",
+        infoL4: "Hevwate, dijwate û bikaranîna ne-fermî.",
+        infoL5: "Werger bo gelek zimanên din.",
+        infoP3: "Di mîhengan de, dikarî xuyakirina ferhengê li gorî dilê xwe biguherî, wek rengê temayê û font. Hêvî dikin ev amûr di rêwîtiya fêrbûna zimanê te de bibe alîkar!",
+        settingsTitle: "Mîheng",
+        settingsDisplay: "Mîhengên Xuyakirinê",
+        settingsShowExamples: "Nimûneyan Nîşan Bide",
+        settingsShowSynonyms: "Hevwate û Dijwateyan Nîşan Bide",
+        settingsShowInformal: "Bikaranîna Ne-fermî Nîşan Bide",
+        settingsShowMultiLang: "Wergerên Pirzimanî Nîşan Bide",
+        settingsAppearance: "Xuyakirin",
+        settingsFont: "Font",
+        settingsLanguage: "Zimanê Navrûyê",
+        settingsTheme: "Rengê Temayê",
+        settingsColorMode: "Moda Xuyakirinê",
+        modeLight: "Ronî",
+        modeDark: "Tarî",
+        modeSystem: "Pergal",
+        langKurdish: "کوردی",
+        langEnglish: "English",
+        ariaSettings: "Mîheng",
+        ariaInfo: "Agahî",
+        ariaToggleMode: "Guherandina moda ronî/tarî",
+        ariaFavorite: "Bijarte",
+        ariaSpeak: "Bilêvkirin",
+        ariaTranslate: "Wergerîne Îngilîzî",
+        ariaDelete: "Jê bibe",
+        ariaClose: "Bigire",
     }
 };
 
@@ -173,6 +234,9 @@ export default function App() {
     const [page, setPage] = useState('home');
     const [userId, setUserId] = useState(null);
     const [isAuthReady, setIsAuthReady] = useState(false);
+    // Bumping this remounts DictionaryApp, clearing any open search result so the
+    // landing tiles reappear (used when the brand/Home is clicked).
+    const [homeNonce, setHomeNonce] = useState(0);
 
     const [uiLang, setUiLang] = usePersistentState('fj_uiLang', 'ku');
     const [font, setFont] = usePersistentState('fj_font', 'font-vazirmatn');
@@ -236,6 +300,11 @@ export default function App() {
 
     const t = useMemo(() => uiText[uiLang], [uiLang]);
 
+    const goHome = useCallback(() => {
+        setHomeNonce((n) => n + 1);
+        setPage('home');
+    }, []);
+
     const navItems = useMemo(() => [
         { id: 'home', label: t.navHome, icon: <Search className="h-5 w-5" /> },
         { id: 'favorites', label: t.navFavorites, icon: <Star className="h-5 w-5" /> },
@@ -253,7 +322,7 @@ export default function App() {
                 return <HistoryPage userId={userId} t={t} theme={theme} />;
             case 'home':
             default:
-                return <DictionaryApp userId={userId} t={t} settings={settings} theme={theme} uiLang={uiLang} />;
+                return <DictionaryApp key={homeNonce} userId={userId} t={t} settings={settings} theme={theme} uiLang={uiLang} />;
         }
     };
 
@@ -262,6 +331,7 @@ export default function App() {
             <Navbar
                 navItems={navItems}
                 setPage={setPage}
+                onHome={goHome}
                 currentPage={page}
                 t={t}
                 theme={theme}
@@ -274,7 +344,7 @@ export default function App() {
                 {renderPage()}
             </main>
             <Footer t={t} />
-            <BottomNav navItems={navItems} currentPage={page} setPage={setPage} theme={theme} />
+            <BottomNav navItems={navItems} currentPage={page} setPage={setPage} onHome={goHome} theme={theme} />
             {isInfoModalOpen && <InfoModal t={t} theme={theme} onClose={() => setIsInfoModalOpen(false)} />}
             {isSettingsModalOpen && (
                 <SettingsModal
@@ -291,19 +361,19 @@ export default function App() {
 }
 
 // --- Navigation Bar ---
-function Navbar({ navItems, setPage, currentPage, t, theme, isDark, onToggleMode, onInfoClick, onSettingsClick }) {
+function Navbar({ navItems, setPage, onHome, currentPage, t, theme, isDark, onToggleMode, onInfoClick, onSettingsClick }) {
     const iconBtn = "p-2 rounded-full text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors";
     return (
         <nav className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-lg sticky top-0 z-40 border-b border-slate-200 dark:border-slate-800">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex items-center justify-between h-20 gap-2">
-                    <button onClick={() => setPage('home')} className="flex items-center cursor-pointer bg-transparent border-none p-0 min-w-0">
+                    <button onClick={onHome} className="flex items-center cursor-pointer bg-transparent border-none p-0 min-w-0">
                         <BookOpen className={`h-8 w-8 shrink-0 ${theme.text}`} />
                         <span className={`font-bold text-lg sm:text-2xl mx-2 truncate ${theme.text}`}>{t.title}</span>
                     </button>
                     <div className="hidden md:flex items-center space-x-1">
                         {navItems.map((item) => (
-                            <button key={item.id} onClick={() => setPage(item.id)}
+                            <button key={item.id} onClick={() => (item.id === 'home' ? onHome() : setPage(item.id))}
                                 aria-current={currentPage === item.id ? 'page' : undefined}
                                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${ currentPage === item.id ? `${theme.text} font-bold bg-transparent border-2 ${theme.border}` : `text-slate-600 dark:text-slate-300 bg-transparent border-2 border-transparent hover:bg-slate-200 dark:hover:bg-slate-800` }`}>
                                 {item.icon} {item.label}
@@ -324,12 +394,12 @@ function Navbar({ navItems, setPage, currentPage, t, theme, isDark, onToggleMode
 }
 
 // --- Mobile bottom navigation ---
-function BottomNav({ navItems, currentPage, setPage, theme }) {
+function BottomNav({ navItems, currentPage, setPage, onHome, theme }) {
     return (
         <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/90 dark:bg-slate-900/90 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800">
             <div className="flex justify-around">
                 {navItems.map((item) => (
-                    <button key={item.id} onClick={() => setPage(item.id)}
+                    <button key={item.id} onClick={() => (item.id === 'home' ? onHome() : setPage(item.id))}
                         aria-current={currentPage === item.id ? 'page' : undefined}
                         className={`flex-1 flex flex-col items-center gap-1 py-2.5 text-xs font-medium transition-colors ${currentPage === item.id ? theme.text : 'text-slate-500 dark:text-slate-400'}`}>
                         {item.icon}
@@ -823,8 +893,12 @@ function SettingsModal({ t, settings, setSettings, font, setFont, uiLang, setUiL
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">{t.settingsLanguage}</label>
                                     <div className="flex gap-2">
-                                        <button onClick={() => setUiLang('ku')} className={`w-full py-2 rounded-lg transition-colors ${uiLang === 'ku' ? `${theme.bg} text-white` : 'bg-slate-200 dark:bg-slate-700'}`}>{t.langKurdish}</button>
-                                        <button onClick={() => setUiLang('en')} className={`w-full py-2 rounded-lg transition-colors ${uiLang === 'en' ? `${theme.bg} text-white` : 'bg-slate-200 dark:bg-slate-700'}`}>{t.langEnglish}</button>
+                                        {[{ id: 'ku', label: 'سۆرانی' }, { id: 'kmr', label: 'Kurmancî' }, { id: 'en', label: 'English' }].map((lng) => (
+                                            <button key={lng.id} onClick={() => setUiLang(lng.id)}
+                                                className={`flex-1 py-2 rounded-lg text-sm transition-colors ${uiLang === lng.id ? `${theme.bg} text-white` : 'bg-slate-200 dark:bg-slate-700'}`}>
+                                                {lng.label}
+                                            </button>
+                                        ))}
                                     </div>
                                 </div>
                             </div>
