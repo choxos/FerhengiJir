@@ -99,7 +99,7 @@ async function requireAuth(req) {
 // Returns true if the request may proceed past App Check. When enforcement is
 // off, this always returns true (and just records a warning on bad tokens).
 async function appCheckAllowed(req) {
-  const enforce = APP_CHECK_ENFORCE.value() === true;
+  const enforce = (process.env.APP_CHECK_ENFORCE || '').toLowerCase() === 'true';
   const token = req.headers['x-firebase-appcheck'];
   if (!token) return !enforce;
   try {
