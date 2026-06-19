@@ -75,9 +75,9 @@ it, so nothing breaks before then. To turn it on:
    reCAPTCHA v3 and copy the site key.
 2. Set `REACT_APP_RECAPTCHA_SITE_KEY` in `.env` and rebuild. The client now
    attaches an App Check token to every `/api` request.
-3. Once tokens are flowing, enforce on the server by setting the function param
-   `APP_CHECK_ENFORCE=true` (e.g. a `functions/.env` line `APP_CHECK_ENFORCE=true`,
-   then redeploy). The function then rejects requests without a valid token.
+3. Once tokens are flowing, enforce on the server by adding a `functions/.env`
+   line `APP_CHECK_ENFORCE=true` and redeploying. The function then rejects
+   requests without a valid App Check token.
 
 The CSP in `firebase.json` already allows the reCAPTCHA and Analytics origins, so
 no header change is needed when you enable these.
