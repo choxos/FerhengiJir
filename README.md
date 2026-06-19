@@ -42,15 +42,22 @@ yarn install
 
 1. Go to [Firebase Console](https://console.firebase.google.com/)
 2. Create a new project or select an existing one
-3. Enable **Firestore Database** in test mode
+3. Enable **Firestore Database** (then deploy the included `firestore.rules`; do
+   not leave it in open test mode)
 4. Go to Project Settings → General → Your apps
 5. Add a web app and copy the configuration values
 
-### 3. Google Gemini API Setup
+### 3. Google Gemini API Setup (server-side only)
 
 1. Visit [Google AI Studio](https://aistudio.google.com/app/apikey)
 2. Create a new API key for Gemini
-3. Save the API key securely
+3. Store it as a **Firebase secret**, never as a `REACT_APP_*` variable:
+   ```bash
+   firebase functions:secrets:set GEMINI_API_KEY
+   ```
+
+> The key is used only by the Cloud Function in `functions/`. It must never reach
+> the browser. See [`SECURITY.md`](./SECURITY.md) for the full architecture.
 
 ### 4. Environment Configuration
 
@@ -68,23 +75,27 @@ yarn install
    REACT_APP_FIREBASE_STORAGE_BUCKET=your_project_id.appspot.com
    REACT_APP_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
    REACT_APP_FIREBASE_APP_ID=your_app_id
-
-   # Google Gemini API Key
-   REACT_APP_GEMINI_API_KEY=your_gemini_api_key_here
    ```
+
+   Do **not** add the Gemini key here. `REACT_APP_*` variables are baked into the
+   public JS bundle. The Gemini key is a server-side Firebase secret (see step 3).
 
 ### 5. Firebase Security Rules
 
-Set up Firestore security rules in Firebase Console:
+The rules live in [`firestore.rules`](./firestore.rules) and are deployed with the
+app (`firebase deploy --only firestore:rules`). They scope each authenticated user
+to their own `favorites`/`history` and deny everything else:
 
 ```javascript
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow authenticated users to read/write their own data
-    match /artifacts/{appId}/users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    match /artifacts/{appId}/users/{userId}/{collection}/{docId} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == userId
+                         && collection in ['favorites', 'history'];
     }
+    match /{document=**} { allow read, write: if false; }
   }
 }
 ```
@@ -122,12 +133,12 @@ npm install -g firebase-tools
 # Login to Firebase
 firebase login
 
-# Initialize Firebase in your project
-firebase init hosting
+# Install the Cloud Function dependencies (first time only)
+cd functions && npm install && cd ..
 
-# Build and deploy
+# Build and deploy hosting + the Gemini proxy function + Firestore rules
 npm run build
-firebase deploy
+firebase deploy --only hosting,functions,firestore:rules
 ```
 
 ### 2. Netlify
@@ -166,7 +177,10 @@ For production deployments, make sure to set these environment variables in your
 - `REACT_APP_FIREBASE_STORAGE_BUCKET`
 - `REACT_APP_FIREBASE_MESSAGING_SENDER_ID`
 - `REACT_APP_FIREBASE_APP_ID`
-- `REACT_APP_GEMINI_API_KEY`
+
+The Gemini key is **not** an environment variable here; it is a server-side
+Firebase secret (`firebase functions:secrets:set GEMINI_API_KEY`). See
+[`SECURITY.md`](./SECURITY.md).
 
 ## Usage
 
@@ -216,10 +230,17 @@ Update the `uiText` object in `src/App.js` to add new languages or modify existi
 
 ## Security Considerations
 
-1. **API Key Security**: Keep your Gemini API key secure and consider implementing server-side proxy for production
-2. **Firebase Rules**: Implement proper Firestore security rules
-3. **Rate Limiting**: Consider implementing rate limiting to prevent API abuse
-4. **CORS**: Configure proper CORS settings for your domain
+See [`SECURITY.md`](./SECURITY.md) for the full architecture. In short:
+
+1. **API key**: the Gemini key lives only in the Cloud Function (Firebase secret),
+   never in the client bundle. Calls go through `/api/*`.
+2. **Firebase rules**: [`firestore.rules`](./firestore.rules) scopes each user to
+   their own data and denies everything else.
+3. **Auth + rate limiting**: the proxy requires a Firebase ID token and applies a
+   per-user rate limit; the prompt is built server-side so the key can't be reused
+   as a general LLM.
+4. **Headers**: `firebase.json` sets CSP, HSTS, X-Frame-Options, and more.
+5. **Next step**: enable Firebase App Check for stronger abuse protection.
 
 ## Troubleshooting
 

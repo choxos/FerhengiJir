@@ -2,10 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Import Google Fonts for Kurdish/Arabic text */
-@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap');
+/* Fonts (Vazirmatn / Noto Naskh Arabic / Amiri) are loaded via <link> in
+   public/index.html so they fetch in parallel instead of blocking CSS parse. */
 
 /* Font classes */
 .font-vazirmatn { 
@@ -95,17 +93,15 @@ code {
   background: #94a3b8;
 }
 
-/* Dark mode scrollbar */
-@media (prefers-color-scheme: dark) {
-  ::-webkit-scrollbar-track {
-    background: #1e293b;
-  }
-  
-  ::-webkit-scrollbar-thumb {
-    background: #475569;
-  }
-  
-  ::-webkit-scrollbar-thumb:hover {
-    background: #64748b;
-  }
+/* Dark mode scrollbar (follows the manual .dark class on <html>) */
+.dark ::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
 } 
