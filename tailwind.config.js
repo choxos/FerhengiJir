@@ -3,7 +3,16 @@ module.exports = {
   content: [
     "./src/**/*.{js,jsx,ts,tsx}",
   ],
-  darkMode: 'media', // or 'class' for manual dark mode toggle
+  darkMode: 'class', // toggled manually via a class on <html> (light/dark/system)
+  // Theme classes are built by string concatenation (e.g. `peer-checked:${theme.bg}`
+  // and `hover:${theme.text}`), so the scanner can't see the final class. Safelist
+  // every per-theme variant that is composed dynamically.
+  safelist: [
+    'peer-checked:bg-indigo-500', 'peer-checked:bg-slate-500', 'peer-checked:bg-blue-600',
+    'peer-checked:bg-green-600', 'peer-checked:bg-red-600',
+    'hover:text-indigo-500', 'hover:text-slate-500', 'hover:text-blue-600',
+    'hover:text-green-600', 'hover:text-red-600',
+  ],
   theme: {
     extend: {
       fontFamily: {
