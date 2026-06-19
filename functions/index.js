@@ -10,23 +10,36 @@
  *
  * Hardening applied here:
  *   - Requires a valid Firebase Auth ID token (anonymous sign-in is fine).
+ *   - Optional Firebase App Check enforcement (set the APP_CHECK_ENFORCE secret
+ *     to "true" once reCAPTCHA is configured) to tie requests to the real app.
  *   - Builds the prompt server-side, so callers cannot turn the key into a
  *     free general-purpose LLM (no arbitrary prompt passthrough).
  *   - Validates and caps all input sizes.
  *   - Best-effort per-user rate limiting.
+ *   - Shared Firestore cache for word analyses (cuts cost and latency).
+ *   - Retries transient upstream failures and surfaces safety blocks clearly.
  */
 
+const crypto = require('crypto');
 const { onRequest } = require('firebase-functions/v2/https');
-const { defineSecret } = require('firebase-functions/params');
+const { defineSecret, defineBoolean } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
 
 admin.initializeApp();
+const firestore = admin.firestore();
 
 const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY');
+// Set APP_CHECK_ENFORCE=true (functions env/param) to reject requests without a
+// valid App Check token. Defaults to false so the app keeps working until
+// reCAPTCHA/App Check is configured.
+const APP_CHECK_ENFORCE = defineBoolean('APP_CHECK_ENFORCE', { default: false });
 
 const GEMINI_MODEL = 'gemini-2.0-flash';
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
+const CACHE_COLLECTION = 'aiCache';
+const CACHE_VERSION = 1; // bump to invalidate all cached analyses
 
 // Origins allowed to call the function directly (cross-origin). In production
 // the app is served same-origin via a Hosting rewrite, so CORS is not needed
@@ -44,8 +57,7 @@ const MAX_TEXTS = 20;
 const MAX_TEXT_LENGTH = 1000;
 
 // Best-effort in-memory rate limit. This is per warm instance, not global, so
-// it is a guardrail rather than a hard quota. App Check is the recommended
-// next layer for real abuse protection.
+// it is a guardrail rather than a hard quota. App Check is the real protection.
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX = 30;
 const rateBuckets = new Map();
@@ -68,7 +80,7 @@ function applyCors(req, res) {
     res.set('Access-Control-Allow-Origin', origin);
     res.set('Vary', 'Origin');
     res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Firebase-AppCheck');
     res.set('Access-Control-Max-Age', '3600');
   }
 }
@@ -82,6 +94,21 @@ async function requireAuth(req) {
   } catch (err) {
     logger.warn('ID token verification failed', err.message);
     return null;
+  }
+}
+
+// Returns true if the request may proceed past App Check. When enforcement is
+// off, this always returns true (and just records a warning on bad tokens).
+async function appCheckAllowed(req) {
+  const enforce = APP_CHECK_ENFORCE.value() === true;
+  const token = req.headers['x-firebase-appcheck'];
+  if (!token) return !enforce;
+  try {
+    await admin.appCheck().verifyToken(String(token));
+    return true;
+  } catch (err) {
+    logger.warn('App Check verification failed', err.message);
+    return !enforce;
   }
 }
 
@@ -136,41 +163,83 @@ const ANALYSIS_SCHEMA = {
   required: ['translation', 'meanings'],
 };
 
-async function callGemini(payload, apiKey) {
-  const response = await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+function httpError(message, status) {
+  const err = new Error(message);
+  err.status = status;
+  return err;
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Calls Gemini, retrying once on transient (5xx / network) failures, and turns
+// safety blocks and malformed output into clear errors.
+async function callGemini(payload, apiKey, attempt = 0) {
+  let response;
+  try {
+    response = await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch (netErr) {
+    if (attempt < 1) {
+      await sleep(400);
+      return callGemini(payload, apiKey, attempt + 1);
+    }
+    logger.error('Gemini network error', netErr.message);
+    throw httpError('Upstream AI request failed', 502);
+  }
+
   if (!response.ok) {
-    const detail = await response.text();
+    const detail = await response.text().catch(() => '');
     logger.error('Gemini error', response.status, detail.slice(0, 500));
-    const err = new Error('Upstream AI request failed');
-    err.status = response.status === 429 ? 429 : 502;
-    throw err;
+    if (response.status === 429) throw httpError('AI is rate limited, try again shortly', 429);
+    if (response.status >= 500 && attempt < 1) {
+      await sleep(400);
+      return callGemini(payload, apiKey, attempt + 1);
+    }
+    throw httpError('Upstream AI request failed', 502);
   }
-  const result = await response.json();
-  const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) {
-    const err = new Error('Empty AI response');
-    err.status = 502;
-    throw err;
+
+  const result = await response.json().catch(() => null);
+  if (!result) throw httpError('Malformed AI response', 502);
+
+  if (result.promptFeedback && result.promptFeedback.blockReason) {
+    throw httpError('Request was blocked by the safety filter', 422);
   }
+  const candidate = result.candidates && result.candidates[0];
+  if (candidate && candidate.finishReason === 'SAFETY') {
+    throw httpError('Response was blocked by the safety filter', 422);
+  }
+  const text = candidate && candidate.content && candidate.content.parts && candidate.content.parts[0]
+    ? candidate.content.parts[0].text
+    : null;
+  if (!text) throw httpError('Empty AI response', 502);
   return text;
 }
 
 async function handleAnalyze(body, apiKey) {
   const term = String(body.term || '').trim();
   const direction = body.direction === 'ku-to-en' ? 'ku-to-en' : 'en-to-ku';
-  if (!term) {
-    const err = new Error('Missing term');
-    err.status = 400;
-    throw err;
-  }
-  if (term.length > MAX_TERM_LENGTH) {
-    const err = new Error('Term too long');
-    err.status = 400;
-    throw err;
+  if (!term) throw httpError('Missing term', 400);
+  if (term.length > MAX_TERM_LENGTH) throw httpError('Term too long', 400);
+
+  // Shared cache: identical (direction, term) lookups are served from Firestore
+  // instead of paying for another Gemini call. Dictionary entries are stable.
+  const cacheKey = crypto
+    .createHash('sha1')
+    .update(`${CACHE_VERSION}|${direction}|${term.toLowerCase()}`)
+    .digest('hex');
+  const cacheRef = firestore.collection(CACHE_COLLECTION).doc(cacheKey);
+
+  try {
+    const cached = await cacheRef.get();
+    if (cached.exists) {
+      const data = cached.data();
+      if (data && data.payload) return data.payload;
+    }
+  } catch (err) {
+    logger.warn('Cache read failed', err.message);
   }
 
   const [sourceLang, targetLang] =
@@ -187,21 +256,25 @@ async function handleAnalyze(body, apiKey) {
   };
 
   const text = await callGemini(payload, apiKey);
-  return JSON.parse(text);
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    logger.error('Analysis JSON parse failed', err.message);
+    throw httpError('AI returned an unreadable response', 502);
+  }
+
+  cacheRef
+    .set({ payload: parsed, direction, term, createdAt: admin.firestore.FieldValue.serverTimestamp() })
+    .catch((err) => logger.warn('Cache write failed', err.message));
+
+  return parsed;
 }
 
 async function handleTranslateText(body, apiKey) {
   const texts = Array.isArray(body.texts) ? body.texts : [];
-  if (texts.length === 0) {
-    const err = new Error('Missing texts');
-    err.status = 400;
-    throw err;
-  }
-  if (texts.length > MAX_TEXTS) {
-    const err = new Error('Too many texts');
-    err.status = 400;
-    throw err;
-  }
+  if (texts.length === 0) throw httpError('Missing texts', 400);
+  if (texts.length > MAX_TEXTS) throw httpError('Too many texts', 400);
   const clean = texts.map((t) => String(t || '').slice(0, MAX_TEXT_LENGTH));
 
   const translations = await Promise.all(
@@ -240,6 +313,11 @@ exports.api = onRequest(
     }
     if (req.method !== 'POST') {
       res.status(405).json({ error: 'Method not allowed' });
+      return;
+    }
+
+    if (!(await appCheckAllowed(req))) {
+      res.status(401).json({ error: 'App Check verification required' });
       return;
     }
 

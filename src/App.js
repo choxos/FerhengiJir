@@ -7,7 +7,7 @@ import {
   Star, Volume2, History, Trash2, Search, BookOpen, Sparkles, Info, X, Shuffle,
   BrainCircuit, BookHeart, Settings, Languages, Sun, Moon,
 } from 'lucide-react';
-import { auth, db, appId } from './config/firebase';
+import { auth, db, appId, track } from './config/firebase';
 import { analyzeWord, translateTexts } from './services/gemini';
 
 // Bilingual brand mark (Sorani + Latin).
@@ -349,9 +349,21 @@ function DictionaryApp({ userId, t, settings, theme, uiLang }) {
     const [error, setError] = useState(null);
     const [favorites, setFavorites] = useState([]);
     const [searchTrigger, setSearchTrigger] = useState({ word: null, lang: null });
+    const [recent, setRecent] = usePersistentState('fj_recent', []);
 
     const cacheRef = useRef(new Map());
     const abortRef = useRef(null);
+
+    // Local autocomplete suggestions: recent searches first, then favorited words.
+    const suggestions = useMemo(() => {
+        const seen = new Set();
+        const out = [];
+        for (const w of [...recent, ...favorites.map((f) => f.word)]) {
+            const key = (w || '').toLowerCase();
+            if (w && !seen.has(key)) { seen.add(key); out.push(w); }
+        }
+        return out.slice(0, 12);
+    }, [recent, favorites]);
 
     const favoritesCollectionRef = useMemo(
         () => (userId ? collection(db, `/artifacts/${appId}/users/${userId}/favorites`) : null),
@@ -392,6 +404,8 @@ function DictionaryApp({ userId, t, settings, theme, uiLang }) {
 
             const resultData = { word: term, ...data, lang: direction };
             setSearchResult(resultData);
+            setRecent((prev) => [term, ...prev.filter((w) => (w || '').toLowerCase() !== term.toLowerCase())].slice(0, 10));
+            track('search', { direction, term });
             if (historyCollectionRef) {
                 addDoc(historyCollectionRef, { ...resultData, timestamp: serverTimestamp() }).catch((e) =>
                     console.error('History write failed', e)
@@ -407,7 +421,7 @@ function DictionaryApp({ userId, t, settings, theme, uiLang }) {
                 abortRef.current = null;
             }
         }
-    }, [word, historyCollectionRef, t.error, t.rateLimited]);
+    }, [word, historyCollectionRef, t.error, t.rateLimited, setRecent]);
 
     useEffect(() => {
         if (searchTrigger.word) {
@@ -462,8 +476,15 @@ function DictionaryApp({ userId, t, settings, theme, uiLang }) {
                             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                             placeholder={t.searchPlaceholder}
                             aria-label={t.searchPlaceholder}
+                            list="search-suggestions"
+                            autoComplete="off"
                             className={`w-full bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 placeholder-slate-400 ps-12 pe-12 py-4 rounded-lg focus:outline-none focus:ring-2 ${theme.ring} transition duration-300`}
                         />
+                        {suggestions.length > 0 && (
+                            <datalist id="search-suggestions">
+                                {suggestions.map((s) => <option key={s} value={s} />)}
+                            </datalist>
+                        )}
                         {word && (
                             <button onClick={() => setWord('')} aria-label={t.clearInput}
                                 className="absolute top-1/2 -translate-y-1/2 end-3 p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">
