@@ -22,7 +22,7 @@
 
 const crypto = require('crypto');
 const { onRequest } = require('firebase-functions/v2/https');
-const { defineSecret, defineBoolean } = require('firebase-functions/params');
+const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
 
@@ -30,12 +30,11 @@ admin.initializeApp();
 const firestore = admin.firestore();
 
 const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY');
-// Set APP_CHECK_ENFORCE=true (functions env/param) to reject requests without a
-// valid App Check token. Defaults to false so the app keeps working until
-// reCAPTCHA/App Check is configured.
-const APP_CHECK_ENFORCE = defineBoolean('APP_CHECK_ENFORCE', { default: false });
+// App Check enforcement is read from a plain env var (default off) so deploys
+// never prompt. To enforce, add `APP_CHECK_ENFORCE=true` to functions/.env and
+// redeploy once reCAPTCHA/App Check is configured.
 
-const GEMINI_MODEL = 'gemini-2.0-flash';
+const GEMINI_MODEL = 'gemini-3.5-flash';
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 const CACHE_COLLECTION = 'aiCache';
